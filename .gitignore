@@ -1,4 +1,6 @@
 *
-!*.ipynb
-!input
+!*/
+*/*
+!*/*.ipynb
+!*/input
 !.gitignore
