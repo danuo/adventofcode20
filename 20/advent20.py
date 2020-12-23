@@ -22,16 +22,30 @@ class Tile():
         self.rotate = False
         self.flip_ac = False
         self.flip_bd = False
+        self.x = None
+        self.y = None
+        self.inv = False
         
-    def set_state(self, rotate = None, flip_ac = None, flip_bd = None):
+    def set_state(self, rotate=None, toggle_rotate=None,
+                  flip_ac=None, flip_bd=None, inv=None,
+                  x=None, y=None):
         if rotate:
             self.rotate = rotate
+        if toggle_rotate:
+            self.rotate = not self.rotate
         if flip_ac:
             self.flip_ac = flip_ac
         if flip_bd:
             self.flip_bd = flip_bd
-            
-    def get_edges_abcd(self):
+        if inv:
+            self.inv = inv
+        if x is not None:
+            self.x = x
+        if y is not None:
+            self.y = y
+
+
+    def get_edges(self):
         edges = tuple(self.hashes)
         hc = tuple(self.hash_counter)
         if self.flip_ac:
@@ -132,6 +146,14 @@ def get_tile_by_idx(idx):
         if tile.idx == idx:
             return tile
 
+def get_tile_by_pos(x, y):
+    for tile in tiles:
+        # print(tile.x)
+        if tile.x == x:
+            if tile.y == y:
+                return tile
+    assert False
+
 def get_tiles_by_edge(current_idx, current_edge):
     idx_list = []
     final_tile = None
@@ -187,7 +209,7 @@ def execute_search(current_idx, current_edge):
     assert idx_list[-1] in corner_idx
     print('last found idx: ', idx_list[-1])
     print('corner_idx: ', corner_idx)
-
+    return idx_list
 
 
 # ─── INITIAL SEARCH ─────────────────────────────────────────────────────────────
@@ -203,41 +225,75 @@ def execute_search(current_idx, current_edge):
 print(corner_idx)  # {3457, 1093, 3709, 2111}
 corner_idx_list = list(corner_idx)
 current_idx = corner_idx_list[0]  # 3457
-
-# 2) select first edge with hash_counter = 2
 current_tile = get_tile_by_idx(current_idx) 
-# make sure both 1-edges face left and top
 
-edges, hc = current_tile.get_edges_abcd()
+# 2) set position of first tile
+current_tile.set_state(x=0, y=0)
+
+# 3) rotate / flip tile, so that 1-edge is in top position
+edges, hc = current_tile.get_edges()
 print(edges, hc)
-# if hc[0] != 1:
-current_tile.set_state(toggle_rotate = True)
-# edges, hc = current_tile.get_edges_abcd()
-# print(edges, hc)
+# if top edge is not 1
+if hc[0] != 1:
+    current_tile.set_state(flip_ac=True)
+edges, hc = current_tile.get_edges()
+assert hc[0] == 1
+
+# 4) flip tile, so that 1-edge is in top AND left position
+# if hc[3] != 1:
+#     current_tile.set_state(flip_bd=True)
+# edges, hc = current_tile.get_edges()
+# assert hc[0] == 1
+# assert hc[3] == 1
+# do later
+
+# 5) select bottom facing edge:
+current_edge = current_tile.get_edges()[0][2]
+
+# 6) find tiles on left edge
+idx_list = execute_search(current_idx, current_edge)
+
+def move_edge_up(idx, edge):
+    tile = get_tile_by_idx(idx)
+    edges = tile.get_edges()[0]
+    if edges[0] == edge:
+        pass
+    elif edges[1] == edge:
+        tile.set_state(flip_bd=True, toggle_rotate=True)    
+    elif edges[2] == edge:
+        tile.set_state(flip_ac=True)
+    elif edges[3] == edge:
+        tile.set_state(toggle_rotate=True)
+
+# 7) apply tiles with correct ad orientation
+for y, idx in enumerate(idx_list[1:], start=1):
+    tile = get_tile_by_idx(idx)
+    tile.set_state(x=0, y=y)
+    move_edge_up(idx, current_edge)
+    edges = tile.get_edges()[0]
+    current_edge = edges[2]
 
 
 
-#%%
-print(current_tile.hashes)        # [553, 791, 549, 517]
-print(current_tile.hash_counter)  # [1, 1, 2, 2]
-for h, hc in zip(current_tile.hashes, current_tile.hash_counter):
-    if hc == 2:
-        current_edge = h
-        break
-print(current_edge)
-
-
-
-# result = get_tiles_by_edge(3457, current_edge)
-execute_search(current_idx, current_edge)
-
-
-
+# make sure all left are 1
+for y in range(12): 
+    x = 0
+    tile = get_tile_by_pos(x, y)
+    edges, hc = tile.get_edges()
+    if hc[3] != 1:
+        tile.set_state(flip_bd=True)
+    edges, hc = tile.get_edges()
+    assert hc[3] == 1
+    if y == 0:
+        assert hc[0] == 1
+    print(edges, hc)
 
 
 
 
 
+# ! first place tiles
+# ! then rotate tiles
 
 #%% debug
 
