@@ -6,6 +6,7 @@ os.chdir(r'./20')
 import re
 from collections import defaultdict
 from math import prod
+import numpy as np
 
 with open('input') as file:
     tile_lines = file.read().split('\n\n')
@@ -15,16 +16,37 @@ class Tile():
     #   a
     # d   b
     #   c
-    def __init__(self, borders, idx):
+    def __init__(self, borders, idx, tile):
         self.idx = idx
         self.parse_borders(borders)
         
-        self.rotate = False
+        # first: flip, second: rotate
         self.flip_ac = False
         self.flip_bd = False
+        self.rotate = False
         self.x = None
         self.y = None
-        self.inv = False
+        # self.inv = False # todo: remove
+        self.array = self.create_array(tile)
+        
+    def create_array(self, tile):
+        new_array = np.zeros((10, 10))
+        for y, line in enumerate(tile.splitlines()[1:]):
+            # print(line)
+            bits = line.replace('#', '1').replace('.', '0')
+            bits_list = [int(c) for c in bits]
+            new_array[y,:] = bits_list
+        return new_array
+    
+    def get_array(self):
+        new_array = self.array
+        if self.flip_ac:
+            new_array = np.flip(new_array, 0)
+        if self.flip_bd:
+            new_array = np.flip(new_array, 1)
+        if self.rotate:
+            new_array = np.rot90(new_array)
+        return new_array
         
     def set_state(self, rotate=None, toggle_rotate=None,
                   flip_ac=None, flip_bd=None, inv=None,
@@ -46,8 +68,8 @@ class Tile():
 
 
     def get_edges(self):
-        edges = tuple(self.hashes)
-        hc = tuple(self.hash_counter)
+        edges = self.hashes
+        hc = self.hash_counter
         if self.flip_ac:
             edges = [edges[i] for i in [2,1,0,3]]
             hc = [hc[i] for i in [2,1,0,3]]
@@ -57,7 +79,7 @@ class Tile():
         if self.rotate:
             edges = [edges[-1],*edges[:-1]]
             hc = [hc[-1],*hc[:-1]]
-        return edges, hc
+        return tuple(edges), tuple(hc)
 
     def count_hashes(self, dicts):
         hash_counter = []
@@ -94,6 +116,7 @@ class Tile():
 tiles = []
 all_idx = set()
 for tile in tile_lines:
+    # parse borders
     border_d = ''
     border_b = ''
     for i, tile_line in enumerate(tile.splitlines()):
@@ -109,7 +132,7 @@ for tile in tile_lines:
     assert len(border_a) == 10  # catch bugs
     assert len(border_b) == 10  # catch bugs
     all_idx.add(tile_idx)
-    tiles.append(Tile([border_a, border_b, border_c, border_d], tile_idx))
+    tiles.append(Tile([border_a, border_b, border_c, border_d], tile_idx, tile))
 
 # ─── COUNT UNIQUE EDGES ─────────────────────────────────────────────────────────
 dict_count = defaultdict(int)
@@ -134,11 +157,8 @@ for i, tile in enumerate(tiles):
         # print(i, tile.idx, tile.hash_counter)
 # ! -> 4 corner tiles are known with orientation
 
-print(corner_idx)
 print('result 1: ', prod(corner_idx))
 
-
-#%%
 # ─── PART 2: ────────────────────────────────────────────────────────────────────
 
 def get_tile_by_idx(idx):
@@ -170,16 +190,19 @@ def get_tiles_by_edge(current_idx, current_edge):
 def execute_one_search_step(current_idx, current_edge, current_flip_state):
     # * step 1: find tile that fits -> only 1 fit?!
     new_tile = get_tiles_by_edge(current_idx, current_edge)
+    
+    # debug
     if not new_tile:
         return None, None, None
 
-    # * get tile
+    # * get edge on opp side
     hashes = new_tile.hashes
     current_hash_index = hashes.index(current_edge)
     new_hash_index = (current_hash_index + 2) % 4
     new_edge = hashes[new_hash_index]
 
-    # * get new flip state    
+    # todo: not needed
+    # * get new flip state
     flip_state_need_change = new_tile.flip_states[new_hash_index % 2]
     new_flip_state = current_flip_state != flip_state_need_change
         
@@ -190,29 +213,55 @@ def execute_search(current_idx, current_edge):
     # fitting tiles. These 11 tiles are distinct, as every edge occures 
     # 1 or 2 times (edge or connection)
     
-    current_flip_state = False
+    current_flip_state = False  # todo: not needed
     counter = 0
     idx_list = [current_idx]
     for _ in range(11): # find 11 more, to have a line of 12
         counter += 1
         current_idx, current_edge, current_flip_state = execute_one_search_step(current_idx, current_edge, current_flip_state)
+        
+        # debug
         assert current_idx is not None, 'found '+str(len(idx_list))+' tiles in a row now'
         assert current_idx not in idx_list, 'found '+str(len(idx_list))+' tiles in a row now'
+        
         idx_list.append(current_idx)
     
-    # ! one more step, see if it crashes
     current_idx, current_edge, current_flip_state = execute_one_search_step(current_idx, current_edge, current_flip_state)
-    assert current_idx == None, '13th can be found'
-    print(idx_list)
-    
-    # ! last tile must be corner tile
-    assert idx_list[-1] in corner_idx
-    print('last found idx: ', idx_list[-1])
-    print('corner_idx: ', corner_idx)
+    assert current_idx == None, '13th can be found'    
     return idx_list
 
 
 # ─── INITIAL SEARCH ─────────────────────────────────────────────────────────────
+
+def move_edge_up(idx, edge):
+    tile = get_tile_by_idx(idx)
+    edges = tile.get_edges()[0]
+    assert tile.rotate == False
+    if edges[0] == edge:
+        pass
+    elif edges[1] == edge:
+        tile.set_state(flip_bd=True, rotate=True)    
+    elif edges[2] == edge:
+        tile.set_state(flip_ac=True)
+    elif edges[3] == edge:
+        tile.set_state(rotate=True)
+    edges = tile.get_edges()[0]
+    assert edges[0] == edge
+
+def move_edge_left(idx, edge):
+    tile = get_tile_by_idx(idx)
+    edges = tile.get_edges()[0]
+    assert tile.rotate == False
+    if edges[0] == edge:
+        tile.set_state(rotate=True, flip_ac=True)
+    if edges[1] == edge:
+        tile.set_state(flip_bd=True)
+    elif edges[2] == edge:
+        tile.set_state(rotate=True)    
+    elif edges[3] == edge:
+        pass
+    edges = tile.get_edges()[0]
+    assert edges[3] == edge
 
 #  
 # X000
@@ -239,33 +288,13 @@ if hc[0] != 1:
 edges, hc = current_tile.get_edges()
 assert hc[0] == 1
 
-# 4) flip tile, so that 1-edge is in top AND left position
-# if hc[3] != 1:
-#     current_tile.set_state(flip_bd=True)
-# edges, hc = current_tile.get_edges()
-# assert hc[0] == 1
-# assert hc[3] == 1
-# do later
-
 # 5) select bottom facing edge:
 current_edge = current_tile.get_edges()[0][2]
 
 # 6) find tiles on left edge
 idx_list = execute_search(current_idx, current_edge)
 
-def move_edge_up(idx, edge):
-    tile = get_tile_by_idx(idx)
-    edges = tile.get_edges()[0]
-    if edges[0] == edge:
-        pass
-    elif edges[1] == edge:
-        tile.set_state(flip_bd=True, toggle_rotate=True)    
-    elif edges[2] == edge:
-        tile.set_state(flip_ac=True)
-    elif edges[3] == edge:
-        tile.set_state(toggle_rotate=True)
-
-# 7) apply tiles with correct ad orientation
+# 7) apply tiles with correct a<->c orientation
 for y, idx in enumerate(idx_list[1:], start=1):
     tile = get_tile_by_idx(idx)
     tile.set_state(x=0, y=y)
@@ -273,9 +302,7 @@ for y, idx in enumerate(idx_list[1:], start=1):
     edges = tile.get_edges()[0]
     current_edge = edges[2]
 
-
-
-# make sure all left are 1
+# 8) apply correct b<->d orientation (all left are 1)
 for y in range(12): 
     x = 0
     tile = get_tile_by_pos(x, y)
@@ -286,20 +313,58 @@ for y in range(12):
     assert hc[3] == 1
     if y == 0:
         assert hc[0] == 1
-    print(edges, hc)
 
+# ─── PART 2 ─────────────────────────────────────────────────────────────────────
+#  
+# XYYY
+# XYYY
+# XYYY
+# XYYY
+# 
 
+for y in range(12):
+    # select starting tile
+    current_tile = get_tile_by_pos(x=0, y=y)
+    current_idx = current_tile.idx
 
+    # select starting edge (right side)
+    current_edge = current_tile.get_edges()[0][1]
 
+    # find matching tiles:
+    idx_list = execute_search(current_idx, current_edge)
+    
+    # apply tiles with correct a<->c orientation
+    for x, idx in enumerate(idx_list[1:], start=1):
+        tile = get_tile_by_idx(idx)
+        tile.set_state(x=x, y=y)
+        move_edge_left(idx, current_edge)
+        edges = tile.get_edges()[0]
+        current_edge = edges[1]
+    
+    
+#%%
+# ─── PART 3 ─────────────────────────────────────────────────────────────────────
 
-# ! first place tiles
-# ! then rotate tiles
+from itertools import product
 
-#%% debug
+# render
+#final size is 12*10 -> 120 * 120
 
-hash_counter_set = set()
-for tile in tiles:
-    for hc in tile.hash_counter:
-        hash_counter_set.add(hc)
+final_array = np.zeros((120, 120), dtype=np.int)
 
-print(hash_counter_set)
+for x,y in product(range(12), range(12)):
+    tile = get_tile_by_pos(x=x, y=y)
+    new_array = tile.get_array()
+    final_array[y*10:(y+1)*10, x*10:(x+1)*10] = new_array
+
+print(final_array)
+
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+
+plt.figure(figsize=(10,10))
+plt.pcolormesh(final_array)
+plt.grid(True)
+# ax.set_major_locator(MultipleLocator(20))
+plt.gca().xaxis.set_major_locator(MultipleLocator(10))
+plt.gca().yaxis.set_major_locator(MultipleLocator(10))
