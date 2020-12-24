@@ -1,12 +1,11 @@
-import os
-os.chdir(r'./20')
-
 #%%
-
 import re
 from collections import defaultdict
 from math import prod
 import numpy as np
+from itertools import product
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 
 with open('input') as file:
     tile_lines = file.read().split('\n\n')
@@ -19,7 +18,7 @@ class Tile():
     def __init__(self, borders, idx, tile):
         self.idx = idx
         self.parse_borders(borders)
-        
+
         # first: flip, second: rotate
         self.flip_ac = False
         self.flip_bd = False
@@ -28,26 +27,34 @@ class Tile():
         self.y = None
         # self.inv = False # todo: remove
         self.array = self.create_array(tile)
-        
+
     def create_array(self, tile):
         new_array = np.zeros((10, 10))
         for y, line in enumerate(tile.splitlines()[1:]):
-            # print(line)
             bits = line.replace('#', '1').replace('.', '0')
             bits_list = [int(c) for c in bits]
             new_array[y,:] = bits_list
         return new_array
-    
+
     def get_array(self):
-        new_array = self.array
+        # print(self.array)
+        new_array = self.array.copy()
         if self.flip_ac:
             new_array = np.flip(new_array, 0)
         if self.flip_bd:
             new_array = np.flip(new_array, 1)
         if self.rotate:
-            new_array = np.rot90(new_array)
+            new_array = np.rot90(new_array, k=-1)
+        # print(self.array)
         return new_array
-        
+    
+    def get_array_crop(self):
+        # return array without edges
+        return self.get_array()[1:-1,1:-1]
+
+    def get_states(self):
+        return self.rotate, self.flip_ac, self.flip_bd
+
     def set_state(self, rotate=None, toggle_rotate=None,
                   flip_ac=None, flip_bd=None, inv=None,
                   x=None, y=None):
@@ -65,7 +72,6 @@ class Tile():
             self.x = x
         if y is not None:
             self.y = y
-
 
     def get_edges(self):
         edges = self.hashes
@@ -86,28 +92,30 @@ class Tile():
         for h in self.hashes:
             hash_counter.append(dicts[h])
         self.hash_counter = tuple(hash_counter)
-        
+
+    @staticmethod
+    def calc_hash(string):
+        hash1 = int(string, 2)
+        hash2 = int(string[::-1], 2)
+        return min(hash1, hash2), hash1 < hash2
+
+    @staticmethod
+    def calc_hash_for_edge_pair(string1, string2):
+        hash1, mins1 = Tile.calc_hash(string1)
+        hash2, mins2 = Tile.calc_hash(string2)
+        flip_state = mins1 == mins2
+        return hash1, hash2, flip_state
+
     def parse_borders(self, borders):
         def str_replace(string):
             return string.replace('#', '1').replace('.', '0')
-        def calc_strings(string1,string2):
-            number_11 = int(string1, 2)
-            number_12 = int(string1[::-1], 2)
-            number_21 = int(string2, 2)
-            number_22 = int(string2[::-1], 2)
-            
-            hash1 = min(number_11, number_12)
-            hash2 = min(number_21, number_22)
-            flip_state =  (number_11 < number_12) == (number_21 < number_22)
-            
-            return hash1, hash2, flip_state
         # order is a,b,c,d (top,right,bot,left)        
         # turn each border into binary string
         borders = list(map(str_replace, borders))
         
         # calculate two integer strings
-        hash_a, hash_c, ac_flip = calc_strings(borders[0], borders[2])
-        hash_b, hash_d, bd_flip = calc_strings(borders[1], borders[3])
+        hash_a, hash_c, ac_flip = Tile.calc_hash_for_edge_pair(borders[0], borders[2])
+        hash_b, hash_d, bd_flip = Tile.calc_hash_for_edge_pair(borders[1], borders[3])
         self.hashes = tuple([hash_a, hash_b, hash_c, hash_d])
         self.flip_states = tuple([ac_flip, bd_flip])
 
@@ -117,8 +125,7 @@ tiles = []
 all_idx = set()
 for tile in tile_lines:
     # parse borders
-    border_d = ''
-    border_b = ''
+    border_b, border_d = '', ''
     for i, tile_line in enumerate(tile.splitlines()):
         if i == 0:
             tile_idx = int(re.search('\d+', tile_line)[0])
@@ -152,10 +159,7 @@ for i, tile in enumerate(tiles):
         if num == 1:
             counter_ones += 1
     if counter_ones > 1:
-        # print(i, ' is corner')
         corner_idx.add(tile.idx)
-        # print(i, tile.idx, tile.hash_counter)
-# ! -> 4 corner tiles are known with orientation
 
 print('result 1: ', prod(corner_idx))
 
@@ -168,7 +172,6 @@ def get_tile_by_idx(idx):
 
 def get_tile_by_pos(x, y):
     for tile in tiles:
-        # print(tile.x)
         if tile.x == x:
             if tile.y == y:
                 return tile
@@ -308,7 +311,10 @@ for y in range(12):
     tile = get_tile_by_pos(x, y)
     edges, hc = tile.get_edges()
     if hc[3] != 1:
-        tile.set_state(flip_bd=True)
+        if tile.rotate:
+            tile.set_state(flip_ac=True)
+        else:
+            tile.set_state(flip_bd=True)
     edges, hc = tile.get_edges()
     assert hc[3] == 1
     if y == 0:
@@ -345,26 +351,136 @@ for y in range(12):
 #%%
 # ─── PART 3 ─────────────────────────────────────────────────────────────────────
 
-from itertools import product
+# top row, move 1 up
+for x in range(1,12):
+    tile = get_tile_by_pos(x=x, y=0)
+    # ! tile can have rotate 
+    edges, hc = tile.get_edges()
+    if hc[0] == 1:
+        pass
+    else:
+        print(tile.rotate)
+        if tile.rotate:
+            tile.set_state(flip_bd=True)
+        else:
+            tile.set_state(flip_ac=True)
+    edges, hc = tile.get_edges()
+    print(hc)
+    assert hc[0] == 1
 
-# render
-#final size is 12*10 -> 120 * 120
 
-final_array = np.zeros((120, 120), dtype=np.int)
+# make each column (top to bottom) match
+for x in range(1,12):
+    # get current edge (down facing)
+    tile = get_tile_by_pos(x=x, y=0)
+    current_edge = tile.get_edges()[0][2]
+    print(current_edge)
+    
+    for y in range(1,12):
+        tile = get_tile_by_pos(x=x, y=y)
+        edges = tile.get_edges()[0]
+        print(edges)
+        new_edge = edges[0]
+        if new_edge == current_edge:
+            pass
+        else:
+            assert edges[2] == current_edge
+            if tile.rotate:
+                tile.set_state(flip_bd=True)
+            else:
+                tile.set_state(flip_ac=True)
+        new_edge = tile.get_edges()[0][0]
+        assert new_edge == current_edge # debug
+        current_edge = tile.get_edges()[0][2]
 
+
+
+# ─── CREATE FINAL CROP ARRAY ────────────────────────────────────────────────────
+
+final_array_crop = np.zeros((8*12, 8*12), dtype=np.int)
 for x,y in product(range(12), range(12)):
     tile = get_tile_by_pos(x=x, y=y)
-    new_array = tile.get_array()
-    final_array[y*10:(y+1)*10, x*10:(x+1)*10] = new_array
+    new_array = tile.get_array_crop()
+    final_array_crop[y*8:(y+1)*8, x*8:(x+1)*8] = new_array
 
-print(final_array)
+# ─── READ MONSTER ───────────────────────────────────────────────────────────────
+monster_coords_xy = []
+monster = """                  # 
+#    ##    ##    ###
+ #  #  #  #  #  #   """
 
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MultipleLocator
+for y, line in enumerate(monster.splitlines()):
+    for x, c in enumerate(line):
+        if c == '#':
+            monster_coords_xy.append((x,y))
+
+# ─── SEARCH MONSTER ─────────────────────────────────────────────────────────────
+
+exec_counter = 0
+
+def start_monster_searche(matrix):
+    global exec_counter
+    mcounta = find_sea_monsters(matrix)
+    print(exec_counter, mcounta)
+    exec_counter += 1
+    return None
+
+def find_sea_monsters(matrix):
+    monster_counter = 0 
+    for y_extra in range(96-2):      # y_max = 2
+        for x_extra in range(96-19): # x_max = 19
+            hit_counter = 0
+            for x, y in monster_coords_xy:
+                if matrix[y+y_extra, x+x_extra] == 1:
+                    hit_counter += 1
+            if hit_counter >= 15:  # todo: 15
+                monster_counter += 1
+                # print(hit_counter, x_extra, y_extra)
+    return monster_counter
+
+# ─── ALL MATRIX ORIENTATIONS ────────────────────────────────────────────────────
+
+matrix = final_array_crop
+for _ in range(4): # rotate
+    # search | normal
+    start_monster_searche(matrix)
+    # flip right | only right
+    matrix = np.flip(matrix, axis=0)
+    start_monster_searche(matrix)
+    # flip top   | both flips 
+    matrix = np.flip(matrix, axis=1)
+    start_monster_searche(matrix)
+    # flip right | only top
+    matrix = np.flip(matrix, axis=0)
+    start_monster_searche(matrix)
+    # flip top   | back to normal
+    matrix = np.flip(matrix, axis=1)
+    # rotate
+    matrix = np.rot90(matrix)
+
+print(np.count_nonzero(matrix)-34*len(monster_coords_xy))
+
+
+
+
+
+
+
+
+
+
+#%%
+
+# ─── VIS ────────────────────────────────────────────────────────────────────────
+
+# ─── RENDER CROP ───────────────────────────────────────────────────────────────
 
 plt.figure(figsize=(10,10))
-plt.pcolormesh(final_array)
+plt.pcolormesh(final_array_crop)
 plt.grid(True)
 # ax.set_major_locator(MultipleLocator(20))
+plt.gca().invert_yaxis()
 plt.gca().xaxis.set_major_locator(MultipleLocator(10))
 plt.gca().yaxis.set_major_locator(MultipleLocator(10))
+
+
