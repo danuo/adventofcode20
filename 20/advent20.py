@@ -19,16 +19,15 @@ class Tile():
         self.idx = idx
         self.parse_borders(borders)
 
-        # first: flip, second: rotate
         self.flip_ac = False
         self.flip_bd = False
         self.rotate = False
         self.x = None
         self.y = None
-        # self.inv = False # todo: remove
-        self.array = self.create_array(tile)
+        self.array = Tile.create_array(tile)
 
-    def create_array(self, tile):
+    @staticmethod
+    def create_array(tile):
         new_array = np.zeros((10, 10))
         for y, line in enumerate(tile.splitlines()[1:]):
             bits = line.replace('#', '1').replace('.', '0')
@@ -37,7 +36,6 @@ class Tile():
         return new_array
 
     def get_array(self):
-        # print(self.array)
         new_array = self.array.copy()
         if self.flip_ac:
             new_array = np.flip(new_array, 0)
@@ -45,15 +43,11 @@ class Tile():
             new_array = np.flip(new_array, 1)
         if self.rotate:
             new_array = np.rot90(new_array, k=-1)
-        # print(self.array)
         return new_array
     
     def get_array_crop(self):
         # return array without edges
         return self.get_array()[1:-1,1:-1]
-
-    def get_states(self):
-        return self.rotate, self.flip_ac, self.flip_bd
 
     def set_state(self, rotate=None, toggle_rotate=None,
                   flip_ac=None, flip_bd=None, inv=None,
@@ -72,8 +66,10 @@ class Tile():
             self.x = x
         if y is not None:
             self.y = y
-
-    def get_edges(self):
+            
+    def get_edge_counts(self):
+        # returns edges in a,b,c,d orientation, according to the
+        # the current tile state
         edges = self.hashes
         hc = self.hash_counter
         if self.flip_ac:
@@ -85,7 +81,23 @@ class Tile():
         if self.rotate:
             edges = [edges[-1],*edges[:-1]]
             hc = [hc[-1],*hc[:-1]]
-        return tuple(edges), tuple(hc)
+        return tuple(hc)
+
+    def get_edges(self):
+        # returns edges in a,b,c,d orientation, according to the
+        # the current tile state
+        edges = self.hashes
+        hc = self.hash_counter
+        if self.flip_ac:
+            edges = [edges[i] for i in [2,1,0,3]]
+            hc = [hc[i] for i in [2,1,0,3]]
+        if self.flip_bd:
+            edges = [edges[i] for i in [0,3,2,1]]
+            hc = [hc[i] for i in [0,3,2,1]]
+        if self.rotate:
+            edges = [edges[-1],*edges[:-1]]
+            hc = [hc[-1],*hc[:-1]]
+        return tuple(edges)
 
     def count_hashes(self, dicts):
         hash_counter = []
@@ -161,6 +173,7 @@ for i, tile in enumerate(tiles):
     if counter_ones > 1:
         corner_idx.add(tile.idx)
 
+assert prod(corner_idx) == 29584525501199
 print('result 1: ', prod(corner_idx))
 
 # ─── PART 2: ────────────────────────────────────────────────────────────────────
@@ -183,7 +196,6 @@ def get_tiles_by_edge(current_idx, current_edge):
     for tile in tiles:
         if current_edge in tile.hashes:
             if current_idx != tile.idx:
-                # print('edge in ', tile.idx)
                 idx_list.append(tile.idx)
                 final_tile = tile
     # return idx_list
@@ -238,7 +250,7 @@ def execute_search(current_idx, current_edge):
 
 def move_edge_up(idx, edge):
     tile = get_tile_by_idx(idx)
-    edges = tile.get_edges()[0]
+    edges = tile.get_edges()
     assert tile.rotate == False
     if edges[0] == edge:
         pass
@@ -248,12 +260,12 @@ def move_edge_up(idx, edge):
         tile.set_state(flip_ac=True)
     elif edges[3] == edge:
         tile.set_state(rotate=True)
-    edges = tile.get_edges()[0]
+    edges = tile.get_edges()
     assert edges[0] == edge
 
 def move_edge_left(idx, edge):
     tile = get_tile_by_idx(idx)
-    edges = tile.get_edges()[0]
+    edges = tile.get_edges()
     assert tile.rotate == False
     if edges[0] == edge:
         tile.set_state(rotate=True, flip_ac=True)
@@ -263,7 +275,7 @@ def move_edge_left(idx, edge):
         tile.set_state(rotate=True)    
     elif edges[3] == edge:
         pass
-    edges = tile.get_edges()[0]
+    edges = tile.get_edges()
     assert edges[3] == edge
 
 #  
@@ -274,7 +286,6 @@ def move_edge_left(idx, edge):
 # 
 
 # 1) select first corner_tile
-print(corner_idx)  # {3457, 1093, 3709, 2111}
 corner_idx_list = list(corner_idx)
 current_idx = corner_idx_list[0]  # 3457
 current_tile = get_tile_by_idx(current_idx) 
@@ -283,16 +294,17 @@ current_tile = get_tile_by_idx(current_idx)
 current_tile.set_state(x=0, y=0)
 
 # 3) rotate / flip tile, so that 1-edge is in top position
-edges, hc = current_tile.get_edges()
-print(edges, hc)
+edges = current_tile.get_edges()
+hc = current_tile.get_edge_counts()
 # if top edge is not 1
 if hc[0] != 1:
     current_tile.set_state(flip_ac=True)
-edges, hc = current_tile.get_edges()
+edges = current_tile.get_edges()
+hc = current_tile.get_edge_counts()
 assert hc[0] == 1
 
 # 5) select bottom facing edge:
-current_edge = current_tile.get_edges()[0][2]
+current_edge = current_tile.get_edges()[2]
 
 # 6) find tiles on left edge
 idx_list = execute_search(current_idx, current_edge)
@@ -302,20 +314,22 @@ for y, idx in enumerate(idx_list[1:], start=1):
     tile = get_tile_by_idx(idx)
     tile.set_state(x=0, y=y)
     move_edge_up(idx, current_edge)
-    edges = tile.get_edges()[0]
+    edges = tile.get_edges()
     current_edge = edges[2]
 
 # 8) apply correct b<->d orientation (all left are 1)
 for y in range(12): 
     x = 0
     tile = get_tile_by_pos(x, y)
-    edges, hc = tile.get_edges()
+    edges = tile.get_edges()
+    hc = tile.get_edge_counts()
     if hc[3] != 1:
         if tile.rotate:
             tile.set_state(flip_ac=True)
         else:
             tile.set_state(flip_bd=True)
-    edges, hc = tile.get_edges()
+    edges = tile.get_edges()
+    hc = tile.get_edge_counts()
     assert hc[3] == 1
     if y == 0:
         assert hc[0] == 1
@@ -334,7 +348,7 @@ for y in range(12):
     current_idx = current_tile.idx
 
     # select starting edge (right side)
-    current_edge = current_tile.get_edges()[0][1]
+    current_edge = current_tile.get_edges()[1]
 
     # find matching tiles:
     idx_list = execute_search(current_idx, current_edge)
@@ -344,28 +358,27 @@ for y in range(12):
         tile = get_tile_by_idx(idx)
         tile.set_state(x=x, y=y)
         move_edge_left(idx, current_edge)
-        edges = tile.get_edges()[0]
+        edges = tile.get_edges()
         current_edge = edges[1]
     
-    
-#%%
+
 # ─── PART 3 ─────────────────────────────────────────────────────────────────────
 
 # top row, move 1 up
 for x in range(1,12):
     tile = get_tile_by_pos(x=x, y=0)
     # ! tile can have rotate 
-    edges, hc = tile.get_edges()
+    edges = tile.get_edges()
+    hc = tile.get_edge_counts()
     if hc[0] == 1:
         pass
     else:
-        print(tile.rotate)
         if tile.rotate:
             tile.set_state(flip_bd=True)
         else:
             tile.set_state(flip_ac=True)
-    edges, hc = tile.get_edges()
-    print(hc)
+    edges = tile.get_edges()
+    hc = tile.get_edge_counts()
     assert hc[0] == 1
 
 
@@ -373,13 +386,11 @@ for x in range(1,12):
 for x in range(1,12):
     # get current edge (down facing)
     tile = get_tile_by_pos(x=x, y=0)
-    current_edge = tile.get_edges()[0][2]
-    print(current_edge)
+    current_edge = tile.get_edges()[2]
     
     for y in range(1,12):
         tile = get_tile_by_pos(x=x, y=y)
-        edges = tile.get_edges()[0]
-        print(edges)
+        edges = tile.get_edges()
         new_edge = edges[0]
         if new_edge == current_edge:
             pass
@@ -389,9 +400,9 @@ for x in range(1,12):
                 tile.set_state(flip_bd=True)
             else:
                 tile.set_state(flip_ac=True)
-        new_edge = tile.get_edges()[0][0]
+        new_edge = tile.get_edges()[0]
         assert new_edge == current_edge # debug
-        current_edge = tile.get_edges()[0][2]
+        current_edge = tile.get_edges()[2]
 
 
 
@@ -417,12 +428,12 @@ for y, line in enumerate(monster.splitlines()):
 # ─── SEARCH MONSTER ─────────────────────────────────────────────────────────────
 
 exec_counter = 0
-
+seamonster_count = []
 def start_monster_searche(matrix):
     global exec_counter
     mcounta = find_sea_monsters(matrix)
-    print(exec_counter, mcounta)
     exec_counter += 1
+    seamonster_count.append(mcounta)
     return None
 
 def find_sea_monsters(matrix):
@@ -458,7 +469,9 @@ for _ in range(4): # rotate
     # rotate
     matrix = np.rot90(matrix)
 
-print(np.count_nonzero(matrix)-34*len(monster_coords_xy))
+result2 = np.count_nonzero(matrix)-max(seamonster_count)*len(monster_coords_xy)
+assert result2 == 1665
+print('result 2: ', result2)
 
 
 
